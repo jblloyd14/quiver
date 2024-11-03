@@ -23,8 +23,8 @@ class Item:
                 f"Item {self.item} does not exist"
                 f"Create it by using subject.write({item}, data_obj, ...) in library {self.library}"
             )
-        self._files = [f for f in self._path.glob("*.parquet") if f.is_file()]
-        self._parquet_path = utils.Path(self._path,".*parquet" )
+        self._files = [f for f in self._path.rglob("*/*.parquet") if f.is_file()]
+        self._parquet_path = utils.Path(self._path,"*/*.parquet" )
         if snapshot:
             snap_path = utils.make_path(self.library, self.subject, '_snapshots', self.item)
 
