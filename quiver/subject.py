@@ -166,7 +166,7 @@ class Subject:
         df = df.with_column((pl.arange(0, df.height) // rows_per_partition).alias("partition"))
 
         # Ensure the last partition includes any remaining rows
-        df = df.with_column(pl.when(pl.col("partition") >= n_partitions).then(3).otherwise(pl.col("partition")).alias("partition"))
+        df = df.with_columns(pl.when(pl.col("partition") >= n_partitions).then(3).otherwise(pl.col("partition")).alias("partition"))
 
         # Write the DataFrame to Parquet files, partitioned by the 'partition' column
         if overwrite:
