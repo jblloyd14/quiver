@@ -163,7 +163,7 @@ class Subject:
         item_size = utils.get_item_size(self.library, self.subject, item)
         n_partitions = int(1 + item_size // partition_size)
         rows_per_partition = df.height // n_partitions
-        df = df.with_column((pl.arange(0, df.height) // rows_per_partition).alias("partition"))
+        df = df.with_columns((pl.arange(0, df.height) // rows_per_partition).alias("partition"))
 
         # Ensure the last partition includes any remaining rows
         df = df.with_columns(pl.when(pl.col("partition") >= n_partitions).then(3).otherwise(pl.col("partition")).alias("partition"))
