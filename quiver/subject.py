@@ -151,13 +151,7 @@ class Subject:
             df = pl.from_pandas(data_obj)
         else:
             df = data_obj
-        # METADATA
-        if metadata is None:
-            if utils.path_exists(utils.make_path(i_path, "quiver_metadata.json")):
-                metadata = utils.read_metadata(utils.make_path(i_path))
-            else:
-                metadata = {}
-        utils.write_metadata(i_path, metadata)
+
         # SORTING
         # sort data for optimal read performance
         if sort_on is not None:
@@ -181,6 +175,16 @@ class Subject:
                 os.remove(a_path)
 
         df.write_parquet(i_path, partition_by="partition", **kwargs)
+        # METADATA
+        if metadata is None:
+            if utils.path_exists(utils.make_path(i_path, "quiver_metadata.json")):
+                metadata = utils.read_metadata(utils.make_path(i_path))
+            else:
+                metadata = {}
+        utils.write_metadata(i_path, metadata)
+
+        self.items.add(item)
+
 
 
     def append(self, item, data_obj, sort_on=None, **kwargs):
