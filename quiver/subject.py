@@ -185,6 +185,7 @@ class Subject:
 
         if isinstance(self.items, list):
             self.items.append(item)
+            self.items = sorted(set(self.items))
         elif isinstance(self.items, set):
             self.items.add(item)
 
