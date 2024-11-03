@@ -1,10 +1,9 @@
-# library is where all your collecitons are stored
+# This file contains the Library class, which is the main interface for the user to interact with the library.
 
+from .subject import Subject
 import os
 import shutil
 from . import utils
-from .subject import Subject
-
 
 class Library:
     def __repr__(self):
@@ -76,3 +75,5 @@ class Library:
     def item(self, subject, item):
         # bypasses subject
         return self.subject(subject).item(item)
+
+

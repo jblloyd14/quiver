@@ -221,8 +221,8 @@ class Subject:
         # Save the appended data to a new Parquet
         append_df.write_parquet(a_path, **kwargs)
         if append_df.estimated_size() > config.DEFAULT_PARTITION_SIZE:
-            print(f"""Warning:{item} Appended data size is larger than default partion size. 
-            Consider loading the whole dataset and overwriteing partitioning""")
+            print(f"""Warning:{item} Appended data size is larger than default partition size. 
+            Consider loading the whole dataset and overwriting partitioning""")
 
     def create_snapshot(self, snapshot=None):
         if snapshot:
