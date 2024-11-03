@@ -4,6 +4,7 @@ from .subject import Subject
 import os
 import shutil
 from . import utils
+import duckdb
 
 class Library:
     def __repr__(self):
@@ -18,7 +19,7 @@ class Library:
             os.mkdir(self.library)
 
         self.subjects = self.list_subjects()
-
+        self.db = duckdb.connect()
 
     def _create_subject(self, subject, overwrite=False):
         # create subject (subdir)
@@ -75,5 +76,13 @@ class Library:
     def item(self, subject, item):
         # bypasses subject
         return self.subject(subject).item(item)
+
+    def stop_db(self):
+        self.db.close()
+        return True
+
+    def start_db(self):
+        self.db = duckdb.connect()
+        return self.db
 
 

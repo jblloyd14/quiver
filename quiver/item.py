@@ -39,16 +39,6 @@ class Item:
     def head(self, n=5):
         return self.data.head(n).collect().to_pandas()
 
-    def query(self, query_string):
-        """
-        using data.filter() is more efficient
-        but can be used to join other data sources
-        :param query_string:
-        :return:
-        """
-        con = duckdb.connect()
-        result = con.execute(query_string)
-        con.close()
-        return result
+
 
 
