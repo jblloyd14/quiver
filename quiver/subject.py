@@ -47,7 +47,7 @@ class Subject:
             if m == len(kwargs):
                 matched.append(d)
 
-        return set(matched)
+        return sorted(set(matched))
 
     def _create_inventory(self):
         """
@@ -183,7 +183,10 @@ class Subject:
                 metadata = {}
         utils.write_metadata(i_path, metadata)
 
-        self.items.add(item)
+        if isinstance(self.items, list):
+            self.items.append(item)
+        elif isinstance(self.items, set):
+            self.items.add(item)
 
 
 
