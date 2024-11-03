@@ -52,7 +52,13 @@ class Library:
 
         # update subjects
         self.subjects = self.list_subjects()
-
+        if metadata is not None:
+            if utils.path_exists(utils.make_path(self.library, subject, 'quiver_metadata.json')):
+                existing_metadata = utils.read_metadata(utils.make_path(self.library, subject))
+                for e in existing_metadata:
+                    if e not in metadata:
+                        metadata[e] = existing_metadata[e]
+            utils.write_metadata(utils.make_path(self.library, subject), metadata)
         # return the subject
         return Subject(subject, self.library)
 
@@ -85,7 +91,9 @@ class Library:
                 print("Aborted")
                 return None
             else:
-                self._create_subject(subject, overwrite)
+                self._create_subject(subject, metadata=metadata, overwrite=overwrite)
+
+
 
         return Subject(subject, self.library)
 
