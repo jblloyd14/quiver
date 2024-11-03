@@ -33,6 +33,9 @@ class Item:
     def to_pandas(self):
         return self.data.collect().to_pandas()
 
+    def to_polars(self):
+        return self.data.collect()
+
     def tail(self, n=5):
         return self.data.tail(n).collect().to_pandas()
 

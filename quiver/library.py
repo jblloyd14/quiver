@@ -17,11 +17,27 @@ class Library:
         self.library = utils.make_path(library_path, library)
         if not utils.path_exists(self.library):
             os.mkdir(self.library)
-
+        self.metadata = utils.read_metadata(self.library)
         self.subjects = self.list_subjects()
         self.db = duckdb.connect()
 
-    def _create_subject(self, subject, overwrite=False):
+    def save_library_metadata(self,metadata):
+        """
+        Save metadata to the library, should have
+        metadata['description'] = "some description of the data in the library'
+        :param metadata:
+        :return:
+        """
+        if utils.path_exists(utils.make_path(self.library, 'quiver_metadata.json')):
+            existing_metadata = utils.read_metadata(utils.make_path(self.library))
+            for e in existing_metadata:
+                if e not in metadata:
+                    metadata[e] = existing_metadata[e]
+        utils.write_metadata(self.library, metadata)
+        self.metadata = metadata
+        return True
+
+    def _create_subject(self, subject, metadata=None, overwrite=False):
         # create subject (subdir)
         subject_path = utils.make_path(self.library, subject)
         if utils.path_exists(subject_path):
@@ -58,7 +74,7 @@ class Library:
         # lists subjects (subdirs)
         return utils.subdirs(self.library)
 
-    def subject(self, subject, overwrite=False):
+    def subject(self, subject, metadata=None, overwrite=False):
         if subject in self.subjects and not overwrite:
             return Subject(subject, self.library)
 

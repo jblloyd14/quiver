@@ -21,6 +21,9 @@ class Subject:
         self.inventory = self._create_inventory()
         self.schema = None
 
+        self.subject_path = utils.make_path(self.library, self.subject)
+        self.metadata = utils.read_metadata(self.subject_path)
+
     def _item_path(self, item, as_string=False):
         p = utils.make_path(self.library, self.subject, item)
         if as_string:
@@ -48,6 +51,24 @@ class Subject:
                 matched.append(d)
 
         return sorted(set(matched))
+
+    def save_subject_metadata(self,metadata):
+        """
+        Save metadata to the library, should have
+        metadata['description'] = "some description of the data in the subject'
+        metadata['schema'] = "schema of the data in the subject"
+        metadata['source'] = "source of the data in the subject"
+        :param metadata:
+        :return:
+        """
+        if utils.path_exists(utils.make_path(self.library, self.subject, 'quiver_metadata.json')):
+            existing_metadata = utils.read_metadata(utils.make_path(self.library,self.subject))
+            for e in existing_metadata:
+                if e not in metadata:
+                    metadata[e] = existing_metadata[e]
+        utils.write_metadata(self.library, metadata)
+        self.metadata = metadata
+        return True
 
     def _create_inventory(self):
         """
