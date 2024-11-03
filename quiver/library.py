@@ -69,7 +69,7 @@ class Library:
                 return None
             else:
                 self._create_subject(subject, overwrite)
-        self._create_subject(subject, overwrite)
+
         return Subject(subject, self.library)
 
     def item(self, subject, item):
