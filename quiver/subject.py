@@ -126,7 +126,7 @@ class Subject:
         return result
 
     def write(self, item, data_obj, metadata=None, sort_on=None,
-              overwrite=False, partition_size=None,
+              overwrite=False, partition_size=None, include_index=False,
               **kwargs):
         """
         writes item data to a subject within library
@@ -146,9 +146,8 @@ class Subject:
                         Otherwise, use `<subject>.append()`""")
 
         # convert pandas to polars if needed
-        # todo makesure not indexed on datetime
         if isinstance(data_obj, pd.DataFrame):
-            df = pl.from_pandas(data_obj)
+            df = pl.from_pandas(data_obj, include_index=include_index)
         else:
             df = data_obj
 
@@ -191,7 +190,7 @@ class Subject:
 
 
 
-    def append(self, item, data_obj, sort_on=None, **kwargs):
+    def append(self, item, data_obj, sort_on=None, include_index=False, **kwargs):
         """
         appends data to an item in a subject
         first checks if there is a partition on called appended_data.parquet
@@ -210,7 +209,7 @@ class Subject:
         a_path = utils.make_path(i_path, "appended_data.parquet")
         data_obj =data_obj.with_columns(pl.lit(i_part).alias('partition'))
         if isinstance(data_obj, pd.DataFrame):
-            data_obj = pl.from_pandas(data_obj)
+            data_obj = pl.from_pandas(data_obj, include_index=include_index)
         elif isinstance(data_obj, pl.LazyFrame):
             data_obj = data_obj.collect()
         elif isinstance(data_obj, pl.DataFrame):
