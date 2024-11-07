@@ -186,7 +186,7 @@ class Subject:
         df = df.with_columns((pl.arange(0, df.height) // rows_per_partition).alias("partition"))
 
         # Ensure the last partition includes any remaining rows
-        df = df.with_columns(pl.when(pl.col("partition") >= n_partitions).then(3).otherwise(pl.col("partition")).alias("partition"))
+        df = df.with_columns(pl.when(pl.col("partition") >= n_partitions).then((n_partitions-1)).otherwise(pl.col("partition")).alias("partition"))
 
         # Write the DataFrame to Parquet files, partitioned by the 'partition' column
         if overwrite:
@@ -209,8 +209,47 @@ class Subject:
         elif isinstance(self.items, set):
             self.items.add(item)
 
+    def lazy_write(self, item, data_obj, metadata=None, sort_on=None, partition_size=None, overwrite=False, **kwargs):
+        i_path = self._item_path(item)
+        if utils.path_exists(i_path) and not overwrite:
+            raise ValueError("""
+                                Item already exists. To overwrite, use `overwrite=True`.
+                                Otherwise, use `<subject>.append()`""")
 
+        if isinstance(data_obj, pl.LazyFrame):
+            df = data_obj
+        else:
+            raise ValueError("Data object must be a polars LazyFrame")
 
+        if sort_on is not None:
+            df = df.sort(sort_on)
+
+        if overwrite:
+            a_path = utils.make_path(i_path, "appended_data.parquet")
+            if utils.path_exists(a_path):
+                os.remove(a_path)
+        if partition_size is None:
+            partition_size = config.DEFAULT_PARTITION_SIZE
+
+        item_size = utils.get_item_size(self.library, self.subject, item)
+        n_partitions = int(1 + item_size // partition_size)
+        df_height = df.select(pl.len()).collect().item()
+        rows_per_partition = df_height // n_partitions
+        df = df.with_columns((pl.arange(0, df_height) // rows_per_partition).alias("partition"))
+        df = df.with_columns(pl.when(pl.col("partition") >= n_partitions).then((n_partitions-1)).otherwise(pl.col("partition")).alias("partition"))
+        for partition, group in df.group_by("partition"):
+            p_path = utils.make_path(self.library, self.subject, item, f"partition={partition}")
+            if not utils.path_exists(i_path):
+                p_path.mkdir(parents=True)
+            # group = group.drop("partition")
+            p_i_path = utils.make_path(p_path, f"{item}.parquet")
+            df.sink_parquet(p_i_path, **kwargs)
+        if metadata is None:
+            if utils.path_exists(utils.make_path(i_path, "quiver_metadata.json")):
+                metadata = utils.read_metadata(utils.make_path(i_path))
+            else:
+                metadata = {}
+        utils.write_metadata(i_path, metadata)
     def append(self, item, data_obj, sort_on=None, include_index=False, **kwargs):
         """
         appends data to an item in a subject
