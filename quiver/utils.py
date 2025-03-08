@@ -97,6 +97,30 @@ def write_metadata(path, metadata={}):
     with meta_file.open("w") as f:
         json.dump(metadata, f, ensure_ascii=False)
 
+
+def schema_to_json(schema: dict):
+    """
+    converts a polars schema to a json schema
+    """
+    schema_as_str = {col:str(dtype) for col,dtype in schema.items()}
+    return json.dumps(schema_as_str)
+
+def json_to_schema(schema_json: str):
+    """
+    converts a json schema to a polars schema
+    """
+    schema_as_str = json.loads(schema_json)
+    return {col: getattr(pl, dtype) for col,dtype in schema_as_str.items()}
+
+def read_subject_schema(path):
+    schema_path = make_path(path, "quiver_schema.json")
+    if path_exists(schema_path):
+        with schema_path.open() as f:
+            schema_json = json.load(f)
+            return json_to_schema(schema_json)
+    else:
+        return {}
+
 def write_subject_schema(path, schema={}):
     """ use this to construct paths for future storage support """
     schema_file = make_path(path, "quiver_schema.json")
