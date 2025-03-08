@@ -5,7 +5,7 @@ from .utils import (read_csv, set_path, get_path,
     set_partition_size, get_partition_size,
     list_libraries, delete_libraries, delete_library,)
 
-__version__ = "0.0.86"
+__version__ = "0.1.01"
 __author__ = "Some Guy"
 
 __all__ = ["Library", "read_csv", "get_path", "set_path",

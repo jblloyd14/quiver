@@ -230,14 +230,15 @@ class Subject:
                 os.remove(a_path)
         if partition_size is None:
             partition_size = config.DEFAULT_PARTITION_SIZE
-
+        # TODO need to add varialbe for n_partitions or file size
         item_size = utils.get_item_size(self.library, self.subject, item)
         n_partitions = int(1 + item_size // partition_size)
         df_height = df.select(pl.len()).collect().item()
         rows_per_partition = df_height // n_partitions
         df = df.with_columns((pl.arange(0, df_height) // rows_per_partition).alias("partition"))
         df = df.with_columns(pl.when(pl.col("partition") >= n_partitions).then((n_partitions-1)).otherwise(pl.col("partition")).alias("partition"))
-        for partition, group in df.group_by("partition"):
+        part_values = df.select(pl.col("partition").unique()).collect().sort().to_list()
+        for partition in part_values:
             p_path = utils.make_path(self.library, self.subject, item, f"partition={partition}")
             if not utils.path_exists(i_path):
                 p_path.mkdir(parents=True)
