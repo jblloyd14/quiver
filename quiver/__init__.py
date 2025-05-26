@@ -8,7 +8,7 @@ from .utils import (read_csv, set_path, get_path,
 __version__ = "0.1.01"
 __author__ = "Some Guy"
 
-__all__ = ["Library", "read_csv", "get_path", "set_path",
+__all__ = ["Library", "get_path", "set_path",
            "get_lib_size", "get_subject_size", "get_item_size",
            "write_metadata", "read_metadata",
            "set_partition_size", "get_partition_size",
