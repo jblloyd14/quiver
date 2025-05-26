@@ -21,8 +21,6 @@ dependencies = []
 
 [project.optional-dependencies]
 
-[project.urls]
-Homepage = ""
 
 [tool.setuptools]
 packages = ["quiver"]
