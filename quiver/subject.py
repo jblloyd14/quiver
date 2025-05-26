@@ -147,7 +147,7 @@ class Subject:
         return result
 
     def write(self, item, data_obj, metadata=None, sort_on=None,
-              overwrite=False, partition_size=None, include_index=False,
+              overwrite=False, partition_size=None, include_index=False, schema=None,
               **kwargs):
         """
         writes item data to a subject within library
@@ -209,89 +209,104 @@ class Subject:
         elif isinstance(self.items, set):
             self.items.add(item)
 
-    def lazy_write(self, item, data_obj, metadata=None, sort_on=None, partition_size=None, overwrite=False, **kwargs):
-        i_path = self._item_path(item)
-        if utils.path_exists(i_path) and not overwrite:
-            raise ValueError("""
-                                Item already exists. To overwrite, use `overwrite=True`.
-                                Otherwise, use `<subject>.append()`""")
-
-        if isinstance(data_obj, pl.LazyFrame):
-            df = data_obj
-        else:
-            raise ValueError("Data object must be a polars LazyFrame")
-
-        if sort_on is not None:
-            df = df.sort(sort_on)
-
-        if overwrite:
-            a_path = utils.make_path(i_path, "appended_data.parquet")
-            if utils.path_exists(a_path):
-                os.remove(a_path)
-        if partition_size is None:
-            partition_size = config.DEFAULT_PARTITION_SIZE
-        # TODO need to add varialbe for n_partitions or file size
-        item_size = utils.get_item_size(self.library, self.subject, item)
-        n_partitions = int(1 + item_size // partition_size)
-        df_height = df.select(pl.len()).collect().item()
-        rows_per_partition = df_height // n_partitions
-        df = df.with_columns((pl.arange(0, df_height) // rows_per_partition).alias("partition"))
-        df = df.with_columns(pl.when(pl.col("partition") >= n_partitions).then((n_partitions-1)).otherwise(pl.col("partition")).alias("partition"))
-        part_values = df.select(pl.col("partition").unique()).collect().sort().to_list()
-        for partition in part_values:
-            p_path = utils.make_path(self.library, self.subject, item, f"partition={partition}")
-            if not utils.path_exists(i_path):
-                p_path.mkdir(parents=True)
-            # group = group.drop("partition")
-            p_i_path = utils.make_path(p_path, f"{item}.parquet")
-            df.sink_parquet(p_i_path, **kwargs)
-        if metadata is None:
-            if utils.path_exists(utils.make_path(i_path, "quiver_metadata.json")):
-                metadata = utils.read_metadata(utils.make_path(i_path))
-            else:
-                metadata = {}
-        utils.write_metadata(i_path, metadata)
-    def append(self, item, data_obj, sort_on=None, include_index=False, **kwargs):
+    
+    def append(self, item, data_obj, sort_on=None, include_index=False,
+               schema=None, partition_on=None, **kwargs):
         """
-        appends data to an item in a subject
-        first checks if there is a partition on called appended_data.parquet
-        if no such file exists then will write to new data to that partition
-        if the file exists it will read in the partition, concat the existing appended data with the new data
-        and then will overwrite the partition  appended_data.parquet
-        :param item:
-        :param data_obj:
-        :param sort_on:
-        :param kwargs:
-        :return:
+        Appends data to an item in a subject with optional Hive-style partitioning.
+        
+        If partition_on is specified, data will be partitioned according to the specified columns.
+        If no partition file exists, new data will be written. If a partition exists, new data
+        will be appended to it.
+        
+        Args:
+            item: Item identifier
+            data_obj: Data to append (pandas or polars DataFrame)
+            sort_on: Column(s) to sort by before saving
+            include_index: Whether to include index when converting from pandas
+            schema: Schema information (unused in this implementation)
+            partition_on: List of column names to use for Hive-style partitioning. 
+                        If not provided, will check for 'partition_on' in subject metadata.
+            **kwargs: Additional arguments passed to write_parquet
         """
         i_path = self._item_path(item)
-        i_files = list(i_path.glob("partition*/*.parquet"))
-        i_part = len(i_files)
-        a_path = utils.make_path(i_path, "appended_data.parquet")
-        data_obj =data_obj.with_columns(pl.lit(i_part).alias('partition'))
+        
+        # Check for partition_on in metadata if not provided
+        if partition_on is None and 'partition_on' in self.metadata:
+            partition_on = self.metadata['partition_on']
+            if not isinstance(partition_on, (list, tuple)):
+                partition_on = [partition_on]  # Ensure it's a list
+        
+        # Convert input to polars DataFrame if needed
         if isinstance(data_obj, pd.DataFrame):
             data_obj = pl.from_pandas(data_obj, include_index=include_index)
         elif isinstance(data_obj, pl.LazyFrame):
             data_obj = data_obj.collect()
-        elif isinstance(data_obj, pl.DataFrame):
-            pass
+        elif not isinstance(data_obj, pl.DataFrame):
+            raise ValueError("Data object must be a pandas DataFrame, polars DataFrame, or polars LazyFrame")
+        
+        # Handle Hive-style partitioning
+        if partition_on and isinstance(partition_on, (list, tuple)):
+            # Verify all partition columns exist in the data
+            missing_cols = [col for col in partition_on if col not in data_obj.columns]
+            if missing_cols:
+                raise ValueError(f"Partition columns not found in data: {missing_cols}")
+                
+            # Group data by partition columns
+            for group in data_obj.group_by(partition_on):
+                partition_values = group[0]  # Tuple of partition values
+                partition_data = group[1]    # DataFrame for this partition
+                
+                # Create partition directory structure (e.g., "ticker=MSFT/year=2023")
+                partition_dir = i_path
+                for i, col in enumerate(partition_on):
+                    partition_dir = partition_dir / f"{col}={partition_values[i]}"
+                
+                # Ensure partition directory exists
+                partition_dir.mkdir(exist_ok=True, parents=True)
+                
+                # Define parquet file path
+                parquet_path = partition_dir / "data.parquet"
+                
+                # Read existing data if it exists, otherwise use empty DataFrame
+                if parquet_path.exists():
+                    existing_data = pl.read_parquet(parquet_path)
+                    combined_data = pl.concat([existing_data, partition_data])
+                else:
+                    combined_data = partition_data
+                
+                # Sort and write the data
+                if sort_on:
+                    combined_data = combined_data.sort(sort_on)
+                        
+                combined_data.write_parquet(parquet_path, **kwargs)
+                
         else:
-            raise ValueError("Data object must be a pandas or polars DataFrame")
-
-        if utils.path_exists(a_path):
-            old_df = pl.read_parquet(a_path)
-
-            append_df = pl.concat([old_df, data_obj])
-        else:
-            append_df = data_obj
-        # SORTING
-        append_df = append_df.sort(sort_on)
-        # Save the appended data to a new Parquet
-        append_df.write_parquet(a_path, **kwargs)
-        if append_df.estimated_size() > config.DEFAULT_PARTITION_SIZE:
-            print(f"""Warning:{item} Appended data size is larger than default partition size. 
-            Consider loading the whole dataset and overwriting partitioning""")
-
+            # Original non-partitioned behavior
+            i_files = list(i_path.glob("partition*/*.parquet"))
+            i_part = len(i_files)
+            a_path = utils.make_path(i_path, "appended_data.parquet")
+            
+            # Add partition column if not using Hive partitioning
+            data_obj = data_obj.with_columns(pl.lit(i_part).alias('partition'))
+            
+            if utils.path_exists(a_path):
+                old_df = pl.read_parquet(a_path)
+                combined_data = pl.concat([old_df, data_obj])
+            else:
+                combined_data = data_obj
+                
+            # Sort and write the data
+            if sort_on:
+                combined_data = combined_data.sort(sort_on)
+                
+            combined_data.write_parquet(a_path, **kwargs)
+            
+            # Warn if data size exceeds partition threshold
+            if combined_data.estimated_size() > config.DEFAULT_PARTITION_SIZE:
+                print(f"""Warning: {item} Appended data size is larger than default partition size. 
+                Consider loading the whole dataset and repartitioning""")
+                
     def create_snapshot(self, snapshot=None):
         if snapshot:
             snapshot = "".join(
@@ -313,20 +328,51 @@ class Subject:
             self.library, self.subject, "_snapshots"))
         return set(snapshots)
 
-    def delete_snapshot(self, snapshot):
+    def delete_snapshot(self, snapshot, confirm=True):
+        """
+        Delete a specific snapshot.
+        
+        Args:
+            snapshot: Name of the snapshot to delete
+            confirm: If True, prompt for confirmation before deletion. Defaults to True.
+        
+        Returns:
+            bool: True if deletion was successful, False if aborted or snapshot didn't exist
+        """
         if snapshot not in self.snapshots:
-            # raise ValueError("Snapshot `%s` doesn't exist" % snapshot)
-            return True
-
-        shutil.rmtree(utils.make_path(self.library, self.subject,
-                                      "_snapshots", snapshot))
+            return True  # Already doesn't exist
+        
+        if confirm:
+            response = input(f"Are you sure you want to delete snapshot '{snapshot}'? (y/n): ")
+            if response.lower() != 'y':
+                print("Deletion aborted")
+                return False
+            
+        shutil.rmtree(utils.make_path(self.library, self.subject, "_snapshots", snapshot))
         self.snapshots = self.list_snapshots()
         return True
 
-    def delete_snapshots(self):
-        snapshots_path = utils.make_path(
-            self.library, self.subject, "_snapshots")
+    def delete_snapshots(self, confirm=True):
+        """
+        Delete all snapshots for this subject.
+        
+        Args:
+            confirm: If True, prompt for confirmation before deletion. Defaults to True.
+        
+        Returns:
+            bool: True if deletion was successful, False if aborted
+        """
+        if not self.snapshots:
+            return True  # No snapshots to delete
+        
+        if confirm:
+            response = input(f"Are you sure you want to delete ALL {len(self.snapshots)} snapshots? This cannot be undone. (y/n): ")
+            if response.lower() != 'y':
+                print("Deletion aborted")
+                return False
+            
+        snapshots_path = utils.make_path(self.library, self.subject, "_snapshots")
         shutil.rmtree(snapshots_path)
-        os.makedirs(snapshots_path)
+        os.makedirs(snapshots_path)  # Recreate the empty directory
         self.snapshots = self.list_snapshots()
         return True
