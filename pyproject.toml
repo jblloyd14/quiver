@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "quiver"
-version = "0.1.01"
+version = "0.1.02"
 description = "A library for managing and querying time series data"
 readme = "README.md"
 authors = [
-    {name = "some guy", email = "@finblocks.com"}
+    {name = "some guy", email = "blloyd@finblocks.com"}
 ]
 license = {text = "MIT"}
 classifiers = [
