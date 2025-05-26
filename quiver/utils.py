@@ -12,17 +12,39 @@ from pathlib import Path
 from . import config
 
 
-def datetime_to_int64(df):
-    """ convert datetime index to epoch int
-    allows for cross language/platform portability
+def datetime_to_int64(df, datetime_col):
+    """Convert a datetime column in a DataFrame to int64 (nanoseconds since epoch).
+    
+    Works with both Polars and Pandas DataFrames. The operation is performed in-place
+    for Pandas and returns a new DataFrame for Polars.
+    
+    Args:
+        df (pl.DataFrame | pd.DataFrame): Input DataFrame containing the datetime column
+        datetime_col (str): Name of the datetime column to convert
+        
+    Returns:
+        pl.DataFrame | pd.DataFrame: DataFrame with the datetime column converted to int64
+        
+    Raises:
+        ValueError: If the specified column is not found or is not a datetime type
     """
-
-    if isinstance(df.index, dd.Index) and (
-            isinstance(df.index, pd.DatetimeIndex) and
-            any(df.index.nanosecond) > 0):
-        df.index = df.index.astype(np.int64)  # / 1e9
-
-    return df
+    # Handle Polars DataFrame
+    if hasattr(df, '_s'):  # Check if it's a Polars DataFrame
+        if datetime_col not in df.columns:
+            raise ValueError(f"Column '{datetime_col}' not found in DataFrame")
+        return df.with_columns(pl.col(datetime_col).dt.epoch('ns').alias(datetime_col))
+    
+    # Handle Pandas DataFrame
+    elif hasattr(df, 'loc'):
+        if datetime_col not in df.columns:
+            raise ValueError(f"Column '{datetime_col}' not found in DataFrame")
+        if not pd.api.types.is_datetime64_any_dtype(df[datetime_col]):
+            raise ValueError(f"Column '{datetime_col}' is not a datetime type")
+        df[datetime_col] = df[datetime_col].astype('int64')
+        return df
+    
+    else:
+        raise ValueError("Input must be either a Polars or Pandas DataFrame")
 
 
 def subdirs(d):
