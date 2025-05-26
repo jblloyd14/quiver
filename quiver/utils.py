@@ -122,6 +122,16 @@ def read_subject_schema(path):
         return {}
 
 def write_subject_schema(path, schema={}):
+    """
+    writes the schema of a quiver subject to a json file
+
+    parameters
+    ----------
+    path : str
+        full path to the quiver subject
+    schema : dict
+        the polars schema of the subject
+    """
     """ use this to construct paths for future storage support """
     schema_file = make_path(path, "quiver_schema.json")
     with schema_file.open("w") as f:
