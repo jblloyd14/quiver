@@ -16,10 +16,27 @@ class Library:
             os.mkdir(library_path)
         self.library = utils.make_path(library_path, library)
         if not utils.path_exists(self.library):
-            os.mkdir(self.library)
+            self._create_library(library)
         self.metadata = utils.read_metadata(self.library)
         self.subjects = self.list_subjects()
         self.db = duckdb.connect()
+
+    def _create_library(self, library_name):
+        """
+        Create a new library after user confirmation.
+        
+        Args:
+            library_name (str): Name of the library to create
+            
+        Returns:
+            None
+        """
+        confirm = input(f"You are creating a new library '{library_name}'. Do you want to proceed? (y/n) ")
+        if confirm.lower() != 'y':
+            print("Library creation aborted")
+            return
+        os.mkdir(self.library)
+        print(f"Library '{library_name}' created successfully")
 
     def save_library_metadata(self,metadata):
         """
@@ -108,5 +125,3 @@ class Library:
     def start_db(self):
         self.db = duckdb.connect()
         return self.db
-
-
