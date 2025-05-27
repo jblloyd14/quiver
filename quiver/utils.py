@@ -80,15 +80,20 @@ def read_metadata(path):
         return {}
 
 
-def write_metadata(path, metadata={}):
+def write_metadata(path, metadata={}, overwrite=False):
     """writes metadata to a quiver library or subject
 
     Args:
-        path (str): full path to library or subject
+        path : str or Path
+            full path to library or subject
         metadata (dict, optional): metadata to write. Defaults to {}.
+        overwrite (bool, optional): if True, overwrite existing metadata. Defaults to False.
     """
     """"""
     now = datetime.now()
+    if path_exists(path) and not overwrite:
+        existing_meta = read_metadata(path)
+        metadata = {**existing_meta, **metadata}
     metadata["_updated"] = now.strftime("%Y-%m-%d %H:%I:%S.%f")
     meta_file = make_path(path, "quiver_metadata.json")
     with meta_file.open("w") as f:
