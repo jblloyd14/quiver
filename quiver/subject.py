@@ -19,10 +19,9 @@ class Subject:
         self.items = self.list_items()
         self.snapshots = self.list_snapshots()
         self.inventory = self._create_inventory()
-        self.schema = None
-
         self.subject_path = utils.make_path(self.library, self.subject)
         self.metadata = utils.read_metadata(self.subject_path)
+        self.schema = utils.read_subject_schema(self.subject_path)
 
     def _item_path(self, item, as_string=False):
         p = utils.make_path(self.library, self.subject, item)
@@ -86,7 +85,7 @@ class Subject:
         return pd.DataFrame.from_records(inventory)
 
     def item(self, item, snapshot=None, filters=None, columns=None, sort_on=None):
-        return Item(item, self.library, self.subject, snapshot=None, filters=None, columns=None, sort_on=None)
+        return Item(item, self.library, self.subject, snapshot=snapshot, filters=filters, columns=columns, sort_on=sort_on)
 
     def index(self, item, index_col='tstamp', last=False):
         i_path = self._item_path(item)
@@ -147,7 +146,7 @@ class Subject:
         return result
 
     def write(self, item, data_obj, metadata=None, sort_on=None,
-              overwrite=False, partition_size=None, include_index=False, schema=None,
+              overwrite=False, partition_on=None, partition_size=None, include_index=False, schema=None,
               **kwargs):
         """
         writes item data to a subject within library
@@ -156,7 +155,9 @@ class Subject:
         :param metadata:
         :param sort_on: list of columns to sort on
         :param overwrite: bool to overwrite existing item
+        :param partition_on: list of columns to partition on
         :param partition_size: bytes for partition size
+        :param schema: optional schema to apply to the data before writing
         :param kwargs:
         :return:
         """
@@ -171,6 +172,18 @@ class Subject:
             df = pl.from_pandas(data_obj, include_index=include_index)
         else:
             df = data_obj
+
+        # Apply schema if it exists
+        if schema is None and self.schema:
+            schema = self.schema
+        
+        if schema:
+            # Ensure all columns in schema exist in the dataframe
+            for col, dtype in schema.items():
+                if col not in df.columns:
+                    df = df.with_columns(pl.lit(None).cast(dtype).alias(col))
+                else:
+                    df = df.with_columns(pl.col(col).cast(dtype))
 
         # SORTING
         # sort data for optimal read performance
@@ -214,29 +227,29 @@ class Subject:
                schema=None, partition_on=None, **kwargs):
         """
         Appends data to an item in a subject with optional Hive-style partitioning.
-        
+
         If partition_on is specified, data will be partitioned according to the specified columns.
         If no partition file exists, new data will be written. If a partition exists, new data
         will be appended to it.
-        
+
         Args:
             item: Item identifier
             data_obj: Data to append (pandas or polars DataFrame)
             sort_on: Column(s) to sort by before saving
             include_index: Whether to include index when converting from pandas
             schema: Schema information (unused in this implementation)
-            partition_on: List of column names to use for Hive-style partitioning. 
+            partition_on: List of column names to use for Hive-style partitioning.
                         If not provided, will check for 'partition_on' in subject metadata.
             **kwargs: Additional arguments passed to write_parquet
         """
         i_path = self._item_path(item)
-        
+
         # Check for partition_on in metadata if not provided
         if partition_on is None and 'partition_on' in self.metadata:
             partition_on = self.metadata['partition_on']
             if not isinstance(partition_on, (list, tuple)):
                 partition_on = [partition_on]  # Ensure it's a list
-        
+
         # Convert input to polars DataFrame if needed
         if isinstance(data_obj, pd.DataFrame):
             data_obj = pl.from_pandas(data_obj, include_index=include_index)
@@ -244,69 +257,69 @@ class Subject:
             data_obj = data_obj.collect()
         elif not isinstance(data_obj, pl.DataFrame):
             raise ValueError("Data object must be a pandas DataFrame, polars DataFrame, or polars LazyFrame")
-        
+
         # Handle Hive-style partitioning
         if partition_on and isinstance(partition_on, (list, tuple)):
             # Verify all partition columns exist in the data
             missing_cols = [col for col in partition_on if col not in data_obj.columns]
             if missing_cols:
                 raise ValueError(f"Partition columns not found in data: {missing_cols}")
-                
+
             # Group data by partition columns
             for group in data_obj.group_by(partition_on):
                 partition_values = group[0]  # Tuple of partition values
                 partition_data = group[1]    # DataFrame for this partition
-                
+
                 # Create partition directory structure (e.g., "ticker=MSFT/year=2023")
                 partition_dir = i_path
                 for i, col in enumerate(partition_on):
                     partition_dir = partition_dir / f"{col}={partition_values[i]}"
-                
+
                 # Ensure partition directory exists
                 partition_dir.mkdir(exist_ok=True, parents=True)
-                
+
                 # Define parquet file path
                 parquet_path = partition_dir / "data.parquet"
-                
+
                 # Read existing data if it exists, otherwise use empty DataFrame
                 if parquet_path.exists():
                     existing_data = pl.read_parquet(parquet_path)
                     combined_data = pl.concat([existing_data, partition_data])
                 else:
                     combined_data = partition_data
-                
+
                 # Sort and write the data
                 if sort_on:
                     combined_data = combined_data.sort(sort_on)
-                        
+
                 combined_data.write_parquet(parquet_path, **kwargs)
-                
+
         else:
             # Original non-partitioned behavior
             i_files = list(i_path.glob("partition*/*.parquet"))
             i_part = len(i_files)
             a_path = utils.make_path(i_path, "appended_data.parquet")
-            
+
             # Add partition column if not using Hive partitioning
             data_obj = data_obj.with_columns(pl.lit(i_part).alias('partition'))
-            
+
             if utils.path_exists(a_path):
                 old_df = pl.read_parquet(a_path)
                 combined_data = pl.concat([old_df, data_obj])
             else:
                 combined_data = data_obj
-                
+
             # Sort and write the data
             if sort_on:
                 combined_data = combined_data.sort(sort_on)
-                
+
             combined_data.write_parquet(a_path, **kwargs)
-            
+
             # Warn if data size exceeds partition threshold
             if combined_data.estimated_size() > config.DEFAULT_PARTITION_SIZE:
                 print(f"""Warning: {item} Appended data size is larger than default partition size. 
                 Consider loading the whole dataset and repartitioning""")
-                
+
     def create_snapshot(self, snapshot=None):
         if snapshot:
             snapshot = "".join(
