@@ -142,7 +142,7 @@ def write_subject_schema(path, schema={}):
 
     parameters
     ----------
-    path : str
+    path : str or Path
         full path to the quiver subject
     schema : dict
         the polars schema of the subject
