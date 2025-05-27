@@ -1,4 +1,3 @@
-import os
 from datetime import datetime
 import json
 import shutil
@@ -7,7 +6,6 @@ import numpy as np
 import polars as pl
 import duckdb
 from pathlib import Path
-
 
 from . import config
 
@@ -117,7 +115,7 @@ def read_subject_schema(path):
 
     parameters
     ----------
-    path : str
+    path : str or Path
         full path to the quiver subject
 
     returns
@@ -156,16 +154,25 @@ def make_path(*args):
 
     Parameters
     ----------
-    *args : str
+    *args : str or Path
         the components of the path
 
     Returns
     -------
-    path : Path
-        the fully constructed path
+    Path
+        the fully constructed path as a Path object
     """
-    # return Path(os.path.join(*args))
-    return Path(*args)
+    # Convert all arguments to Path objects and resolve relative paths
+    path_components = [Path(arg) for arg in args if arg is not None]
+    if not path_components:
+        return Path()
+    
+    # Join all path components
+    result = path_components[0]
+    for component in path_components[1:]:
+        result = result / component
+    
+    return result
 
 
 def get_path(*args):
@@ -177,14 +184,15 @@ def get_path(*args):
     Returns:
         Path: The combined path as a Path object.
     """
-    return Path(config.DEFAULT_PATH, *args)
+    base_path = Path(config.DEFAULT_PATH)
+    return make_path(base_path, *args) if args else base_path
 
 
 def set_path(path=None):
     """Set the default storage path for quiver libraries.
     
     Args:
-        path (str, optional): The path to set as default. If None, uses the current default.
+        path (str or Path, optional): The path to set as default. If None, uses the current default.
         
     Returns:
         Path: The absolute path that was set.
@@ -193,21 +201,24 @@ def set_path(path=None):
         ValueError: If a non-local filesystem path is provided.
     """
     if path is None:
-        path = get_path()
-    else:
-        path = path.rstrip("/").rstrip("\\").rstrip(" ")
-        if "://" in path and "file://" not in path:
-            raise ValueError(
-                "PyStore currently only works with local file system")
-
+        return get_path()
+    
+    path = Path(str(path).rstrip("/\\ "))
+    path_str = str(path)
+    
+    if "://" in path_str and not path_str.startswith("file://"):
+        raise ValueError("PyStore currently only works with local file system")
+    
+    # Handle file:// URLs
+    if path_str.startswith("file://"):
+        path = Path(path_str[7:])  # Remove file:// prefix
+    
+    # Convert to absolute path and resolve any symlinks
+    path = path.resolve()
+    
+    # Update the default path in config
     config.DEFAULT_PATH = path
-    abs_path = get_path()
-
-    # Create directory if it doesn't exist
-    if not path_exists(abs_path):
-        os.makedirs(abs_path)
-
-    return abs_path
+    return path
 
 
 def list_libraries():
@@ -218,7 +229,7 @@ def list_libraries():
     """
     lib_path = get_path()
     if not path_exists(lib_path):
-        os.makedirs(lib_path)
+        lib_path.mkdir()
     return subdirs(lib_path)
 
 
