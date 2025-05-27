@@ -5,7 +5,7 @@ from .utils import (set_path, get_path,
     set_partition_size, get_partition_size,
     list_libraries, delete_libraries, delete_library,)
 
-__version__ = "0.1.02"
+__version__ = "0.1.03"
 __author__ = "Some Guy"
 
 __all__ = ["Library", "get_path", "set_path",
