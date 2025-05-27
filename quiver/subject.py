@@ -146,7 +146,7 @@ class Subject:
         return result
 
     def write(self, item, data_obj, metadata=None, sort_on=None,
-              overwrite=False, partition_on=None, partition_size=None, include_index=False, schema=None,
+              overwrite=False, partition_on="partition", include_index=False, schema=None,
               **kwargs):
         """
         writes item data to a subject within library
@@ -155,8 +155,8 @@ class Subject:
         :param metadata:
         :param sort_on: list of columns to sort on
         :param overwrite: bool to overwrite existing item
-        :param partition_on: list of columns to partition on
-        :param partition_size: bytes for partition size
+        :param partition_on: column or list of columns to partition on. Defaults to 'partition'.
+        :param include_index: whether to include index when converting from pandas
         :param schema: optional schema to apply to the data before writing
         :param kwargs:
         :return:
@@ -191,29 +191,49 @@ class Subject:
             df = df.sort(sort_on)
 
         # PARTITIONING
-        if partition_size is None:
-            partition_size = config.DEFAULT_PARTITION_SIZE
-        item_size = utils.get_item_size(self.library, self.subject, item)
-        n_partitions = int(1 + item_size // partition_size)
-        rows_per_partition = df.height // n_partitions
-        df = df.with_columns((pl.arange(0, df.height) // rows_per_partition).alias("partition"))
+        if partition_on is not None :
+            # Convert to list if it's a single string
+            partition_cols = [partition_on] if isinstance(partition_on, str) else list(partition_on)
+            
+            # If using default 'partition' column, add it if it doesn't exist
+            if partition_cols == ["partition"] and "partition" not in df.columns:
+                # Default partitioning: split into partitions of approximately DEFAULT_PARTITION_SIZE
+                item_size = df.estimated_size("b")
+                n_partitions = max(1, int(item_size // config.DEFAULT_PARTITION_SIZE))
+                rows_per_partition = max(1, df.height // n_partitions)
+                
+                df = df.with_columns(
+                    (pl.arange(0, df.height) // rows_per_partition)
+                    .cast(pl.Int64)
+                    .alias("partition")
+                )
+            
+            # Verify all partition columns exist in the data
+            missing_cols = [col for col in partition_cols if col not in df.columns]
+            if missing_cols:
+                raise ValueError(f"Partition columns not found in data: {missing_cols}")
+        else:
+            partition_cols = None
 
-        # Ensure the last partition includes any remaining rows
-        df = df.with_columns(pl.when(pl.col("partition") >= n_partitions).then((n_partitions-1)).otherwise(pl.col("partition")).alias("partition"))
+        # Write the DataFrame to Parquet files
+        if overwrite and utils.path_exists(i_path):
+            shutil.rmtree(i_path)
+            os.makedirs(i_path, exist_ok=True)
 
-        # Write the DataFrame to Parquet files, partitioned by the 'partition' column
-        if overwrite:
-            a_path = utils.make_path(i_path, "appended_data.parquet")
-            if utils.path_exists(a_path):
-                os.remove(a_path)
-
-        df.write_parquet(i_path, partition_by="partition", **kwargs)
+        # Write with appropriate partitioning
+        df.write_parquet(i_path, partition_by=partition_cols, **kwargs)
+        
         # METADATA
         if metadata is None:
             if utils.path_exists(utils.make_path(i_path, "quiver_metadata.json")):
                 metadata = utils.read_metadata(utils.make_path(i_path))
             else:
                 metadata = {}
+                
+        # Store partition information in metadata
+        if partition_on is not None:
+            metadata['partition_on'] = partition_on
+            
         utils.write_metadata(i_path, metadata)
 
         if isinstance(self.items, list):
@@ -222,9 +242,8 @@ class Subject:
         elif isinstance(self.items, set):
             self.items.add(item)
 
-    
     def append(self, item, data_obj, sort_on=None, include_index=False,
-               schema=None, partition_on=None, **kwargs):
+               schema=None, partition_on=None, partition_size=None, **kwargs):
         """
         Appends data to an item in a subject with optional Hive-style partitioning.
 
