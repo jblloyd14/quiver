@@ -294,3 +294,155 @@ def get_partition_size():
         int: The current partition size in bytes
     """
     return config.PARTITION_SIZE
+
+
+def suggest_subject_schema(subject_path, sample_fraction=0.1, max_files=100):
+    """
+    Suggests a Polars schema that would work for all items in a subject.
+    
+    This function scans through parquet files in the subject directory and suggests
+    a schema that can accommodate all the data types found in those files.
+    Handles numeric types, datetimes, timestamps, categorical, strings, and booleans.
+    
+    Args:
+        subject_path (str or Path): Path to the subject directory
+        sample_fraction (float, optional): Fraction of files to sample (0-1). Defaults to 0.1.
+        max_files (int, optional): Maximum number of files to sample. Defaults to 100.
+        
+    Returns:
+        dict: A dictionary mapping column names to Polars data types that can accommodate all data.
+        
+    Example:
+        # Get suggested schema for a subject
+        subject = Subject("my_subject", "my_library")
+        schema = suggest_subject_schema(subject.subject_path)
+    """
+    subject_path = Path(subject_path)
+    if not subject_path.exists() or not subject_path.is_dir():
+        raise ValueError(f"Subject path does not exist or is not a directory: {subject_path}")
+    
+    # Find all parquet files in the subject directory
+    parquet_files = list(subject_path.rglob("**/*.parquet"))
+    if not parquet_files:
+        return {}
+    
+    # Determine how many files to sample
+    sample_size = min(max(1, int(len(parquet_files) * sample_fraction)), max_files, len(parquet_files))
+    files_to_sample = parquet_files[:sample_size]  # Simple sampling from the start
+    
+    # Initialize schema with the first file
+    try:
+        first_schema = pl.scan_parquet(files_to_sample[0]).schema
+    except Exception as e:
+        raise ValueError(f"Could not read schema from first file {files_to_sample[0]}: {e}")
+    
+    suggested_schema = {}
+    
+    # For each column, find the most permissive type that fits all values
+    for col, dtype in first_schema.items():
+        suggested_schema[col] = dtype
+    
+    # Function to get the most permissive type between two types
+    def get_most_permissive_type(type1, type2):
+        # Handle null types
+        if type1 == pl.Null:
+            return type2
+        if type2 == pl.Null:
+            return type1
+            
+        # If types are the same, return as is
+        if type1 == type2:
+            return type1
+        
+        # Handle boolean type (can't be mixed with other types)
+        if type1 == pl.Boolean or type2 == pl.Boolean:
+            if type1 == pl.Boolean and type2 == pl.Boolean:
+                return pl.Boolean
+            # If one is boolean and other isn't, convert to string
+            return pl.Utf8
+            
+        # Handle datetime types
+        datetime_types = [pl.Datetime, pl.Datetime('ms'), pl.Datetime('us'), pl.Datetime('ns'),
+                         pl.Datetime('ms', '*'), pl.Datetime('us', '*'), pl.Datetime('ns', '*')]
+        
+        if type1 in datetime_types or type2 in datetime_types:
+            # If either is a datetime, return the most precise datetime
+            if type1 in datetime_types and type2 in datetime_types:
+                # Both are datetimes, find the most precise one
+                precisions = {'ns': 3, 'us': 2, 'ms': 1}
+                def get_precision(t):
+                    if t == pl.Datetime:
+                        return 3  # Default to ns precision
+                    return precisions.get(t.time_unit, 3)
+                
+                prec1 = get_precision(type1)
+                prec2 = get_precision(type2)
+                return type1 if prec1 >= prec2 else type2
+            # If only one is datetime, convert to string to be safe
+            return pl.Utf8
+            
+        # Handle date type
+        if type1 == pl.Date or type2 == pl.Date:
+            if type1 == pl.Date and type2 == pl.Date:
+                return pl.Date
+            # If one is date and other isn't, convert to string
+            return pl.Utf8
+            
+        # Handle time type
+        if type1 == pl.Time or type2 == pl.Time:
+            if type1 == pl.Time and type2 == pl.Time:
+                return pl.Time
+            # If one is time and other isn't, convert to string
+            return pl.Utf8
+            
+        # Handle categorical/string types
+        if type1 in (pl.Categorical, pl.Utf8) or type2 in (pl.Categorical, pl.Utf8):
+            return pl.Utf8
+            
+        # Numeric type hierarchy (from least to most permissive)
+        numeric_types = [
+            pl.Int8, pl.Int16, pl.Int32, pl.Int64,
+            pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64,
+            pl.Float32, pl.Float64
+        ]
+        
+        # If both are numeric, find the most permissive type
+        if type1 in numeric_types and type2 in numeric_types:
+            # Signed integers can't be safely converted to unsigned
+            is_signed1 = type1 in [pl.Int8, pl.Int16, pl.Int32, pl.Int64]
+            is_signed2 = type2 in [pl.Int8, pl.Int16, pl.Int32, pl.Int64]
+            
+            # If one is signed and the other is unsigned, promote to float
+            if is_signed1 != is_signed2:
+                return pl.Float64
+                
+            # If both are signed or both are unsigned, find the wider type
+            idx1 = numeric_types.index(type1)
+            idx2 = numeric_types.index(type2)
+            return numeric_types[max(idx1, idx2)]
+            
+        # If we get here and one is numeric and the other isn't, convert to string
+        if type1 in numeric_types or type2 in numeric_types:
+            return pl.Utf8
+            
+        # If types are not directly comparable, default to string
+        return pl.Utf8
+    
+    # Check remaining files to find the most permissive types
+    for file_path in files_to_sample[1:]:
+        try:
+            file_schema = pl.scan_parquet(file_path).schema
+            
+            # Check for new columns
+            for col, dtype in file_schema.items():
+                if col not in suggested_schema:
+                    suggested_schema[col] = dtype
+                else:
+                    # Update to most permissive type
+                    suggested_schema[col] = get_most_permissive_type(
+                        suggested_schema[col], dtype
+                    )
+        except Exception as e:
+            print(f"Warning: Could not read schema from {file_path}: {e}")
+    
+    return suggested_schema
