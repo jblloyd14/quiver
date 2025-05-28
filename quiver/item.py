@@ -23,7 +23,7 @@ class Item:
             self._path = utils.make_path(self.library, self.subject, '_snapshots', self.item, self.snapshot)
             if not self._path.exists():
                 raise ValueError(f"Snapshot {self.snapshot} for item {self.item} does not exist")
-            self._parquet_path = str(self._path / "*.parquet")
+            self._parquet_path = str(self._path / "**/*.parquet")
         else:
             self._path = utils.make_path(self.library, self.subject, self.item)
             if not self._path.exists():
@@ -31,8 +31,8 @@ class Item:
                     f"Item {self.item} does not exist. "
                     f"Create it by using subject.write({item}, data_obj, ...) in library {self.library}"
                 )
-            self._files = [f for f in self._path.rglob("*/*.parquet") if f.is_file()]
-            self._parquet_path = str(Path(self._path, "*/*.parquet"))
+            self._files = [f for f in self._path.rglob("*.parquet") if f.is_file()]
+            self._parquet_path = str(Path(self._path, "**/*.parquet"))
         self.schema = utils.read_subject_schema(self._subject_path)
 
         # Load the data
