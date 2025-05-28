@@ -97,21 +97,34 @@ class Library:
         # lists subjects (subdirs)
         return utils.subdirs(self.library)
 
-    def subject(self, subject, metadata=None, overwrite=False):
+    def subject(self, subject, partition_on='partition', metadata=None, overwrite=False):
+        """
+        Get a subject object, creating it if it does not exist.
+
+        :param subject: str; name of the subject to retrieve or create
+        :param partition_on: str or list of str; partition columns for the subject, defaults to 'partition'
+        :param metadata: dict, optional; metadata for the subject, should contain 'description' key
+        :param overwrite: bool; if True, overwrite the subject if it exists
+        :return: Subject object or None if creation/overwrite is aborted
+        """
         if subject in self.subjects and not overwrite:
             return Subject(subject, self.library)
 
-        # create it
-        if subject not in self.subjects:
-            confirm = input(f"Subject {subject} does not exist. Create it? (y/n)")
-            if confirm.lower() != "y":
-                print("Aborted")
-                return None
-            else:
-                self._create_subject(subject, metadata=metadata, overwrite=overwrite)
+        # Prepare metadata with partition info
+        metadata = metadata or {}
+        if 'partition_on' not in metadata:
+            metadata['partition_on'] = [partition_on] if isinstance(partition_on, str) else partition_on
 
+        # Get confirmation for create/overwrite
+        action = "overwrite" if subject in self.subjects else "create"
+        confirm = input(f"Subject {subject} does not exist. Create it? (y/n)" if action == "create"
+                        else f"You are about to overwrite Subject {subject}. Confirm? (y/n)")
 
+        if confirm.lower() != "y":
+            print("Aborted")
+            return None
 
+        self._create_subject(subject, metadata=metadata, overwrite=overwrite)
         return Subject(subject, self.library)
 
     def item(self, subject, item):
