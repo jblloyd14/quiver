@@ -22,6 +22,7 @@ class Subject:
         self.subject_path = utils.make_path(self.library, self.subject)
         self.metadata = utils.read_metadata(self.subject_path)
         self.schema = utils.read_subject_schema(self.subject_path)
+        self.partition_on = self.metadata.get('partition_on', None)
 
     def _item_path(self, item, as_string=False):
         p = utils.make_path(self.library, self.subject, item)
@@ -94,7 +95,6 @@ class Subject:
             return data.max().collect().item()
         return data.collect()
 
-
     def delete_item(self, item, confirm=True):
         if confirm:
             confirm = input(
@@ -145,9 +145,8 @@ class Subject:
         result = con.execute(query_str).df().pivot(index=index, columns=column, values=value)
         return result
 
-    def write(self, item, data_obj, metadata=None, sort_on=None,
-              overwrite=False, partition_on="partition", include_index=False, schema=None,
-              **kwargs):
+    def write(self, item, data_obj, metadata=None, sort_on=None, overwrite=False,
+              include_index=False, schema=None, **kwargs):
         """
         writes item data to a subject within library
         :param item:
@@ -155,7 +154,6 @@ class Subject:
         :param metadata:
         :param sort_on: list of columns to sort on
         :param overwrite: bool to overwrite existing item
-        :param partition_on: column or list of columns to partition on. Defaults to 'partition'.
         :param include_index: whether to include index when converting from pandas
         :param schema: optional schema to apply to the data before writing
         :param kwargs:
@@ -191,12 +189,8 @@ class Subject:
             df = df.sort(sort_on)
 
         # PARTITIONING
-        if partition_on is not None :
-            # Convert to list if it's a single string
-            partition_cols = [partition_on] if isinstance(partition_on, str) else list(partition_on)
-            
-            # If using default 'partition' column, add it if it doesn't exist
-            if partition_cols == ["partition"] and "partition" not in df.columns:
+        if "partition" in self.partition_on:
+            if "partition" not in df.columns:
                 # Default partitioning: split into partitions of approximately DEFAULT_PARTITION_SIZE
                 item_size = df.estimated_size("b")
                 n_partitions = max(1, int(item_size // config.DEFAULT_PARTITION_SIZE))
@@ -207,13 +201,12 @@ class Subject:
                     .cast(pl.Int64)
                     .alias("partition")
                 )
-            
+
+        else:
             # Verify all partition columns exist in the data
-            missing_cols = [col for col in partition_cols if col not in df.columns]
+            missing_cols = [col for col in self.partition_on if col not in df.columns]
             if missing_cols:
                 raise ValueError(f"Partition columns not found in data: {missing_cols}")
-        else:
-            partition_cols = None
 
         # Write the DataFrame to Parquet files
         if overwrite and utils.path_exists(i_path):
@@ -221,7 +214,7 @@ class Subject:
             os.makedirs(i_path, exist_ok=True)
 
         # Write with appropriate partitioning
-        df.write_parquet(i_path, partition_by=partition_cols, **kwargs)
+        df.write_parquet(i_path, partition_by=self.partition_on, **kwargs)
         
         # METADATA
         if metadata is None:
@@ -229,11 +222,6 @@ class Subject:
                 metadata = utils.read_metadata(utils.make_path(i_path))
             else:
                 metadata = {}
-                
-        # Store partition information in metadata
-        if partition_on is not None:
-            metadata['partition_on'] = partition_on
-            
         utils.write_metadata(i_path, metadata)
 
         if isinstance(self.items, list):
@@ -243,7 +231,7 @@ class Subject:
             self.items.add(item)
 
     def append(self, item, data_obj, sort_on=None, include_index=False,
-               schema=None, partition_on=None, partition_size=None, **kwargs):
+               schema=None, partition_on=None, **kwargs):
         """
         Appends data to an item in a subject with optional Hive-style partitioning.
 
@@ -408,3 +396,4 @@ class Subject:
         os.makedirs(snapshots_path)  # Recreate the empty directory
         self.snapshots = self.list_snapshots()
         return True
+
