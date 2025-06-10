@@ -6,7 +6,7 @@ from .utils import (set_path, get_path,
     list_libraries, delete_libraries, delete_library,
     suggest_subject_schema, write_subject_schema,)
 
-__version__ = "0.1.03"
+__version__ = "0.1.04"
 __author__ = "Some Guy"
 
 __all__ = ["Library", "get_path", "set_path",
