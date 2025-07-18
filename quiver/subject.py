@@ -52,21 +52,18 @@ class Subject:
 
         return sorted(set(matched))
 
-    def save_subject_metadata(self,metadata):
+    def save_subject_metadata(self,metadata, overwrite=False):
         """
         Save metadata to the library, should have
         metadata['description'] = "some description of the data in the subject'
         metadata['schema'] = "schema of the data in the subject"
         metadata['source'] = "source of the data in the subject"
         :param metadata:
+        :param overwrite: bool to overwrite existing metadata
         :return:
         """
-        if utils.path_exists(utils.make_path(self.library, self.subject, 'quiver_metadata.json')):
-            existing_metadata = utils.read_metadata(utils.make_path(self.library,self.subject))
-            for e in existing_metadata:
-                if e not in metadata:
-                    metadata[e] = existing_metadata[e]
-        utils.write_metadata(self.library, metadata)
+
+        utils.write_metadata(self.subject_path, metadata, overwrite=overwrite)
         self.metadata = metadata
         return True
 
@@ -114,9 +111,9 @@ class Subject:
         """
         if self.schema is None:
             raise ValueError("No schema found. Use `set_schema(item)` to set the golden schema")
-
-        sub_path = utils.make_path(self.library, self.subject)
-        sub_gen = utils.make_path(sub_path, "*", "*.parquet")
+        if self.subject_path is None:
+            self.subject_path = utils.make_path(self.library, self.subject)
+        sub_gen = utils.make_path(self.subject_path, "**", "*.parquet")
         return pl.scan_parquet(sub_gen, allow_missing_columns=True, schema=self.schema)
 
     def set_schema(self, item):
@@ -134,24 +131,46 @@ class Subject:
     def get_pivot(self, index, column, value):
         """
         creates a pivot table of the subject
-        :param index:
-        :param column:
-        :param value:
-        :return:
+        only works where you can pass index/column combo that is unique
+        :param index: str
+        :param column: str
+        :param value: str
+        :return: pd.DataFrame
         """
-        df = self.full_subject()
-        query_str = f"SELECT {index}, {column}, {value} FROM df;"
-        con = duckdb.connect()
-        result = con.execute(query_str).df().pivot(index=index, columns=column, values=value)
-        return result
+        # Get the path pattern for all Parquet files in the subject
+        parquet_pattern = str(utils.make_path(self.library, self.subject, "**", "*.parquet"))
+
+        with duckdb.connect() as con:
+            # Register the parquet files as a virtual table
+            con.execute(f"""
+                    CREATE OR REPLACE VIEW subject_data AS 
+                    SELECT * FROM read_parquet('{parquet_pattern}');
+                """)
+
+            # Execute the pivot query directly on the parquet files
+            query = f"""
+                    PIVOT (
+                        SELECT {index}, {column}, {value} 
+                        FROM subject_data
+                    ) 
+                    ON {column}
+                    USING first({value})
+                    GROUP BY {index};
+                """
+
+            # Get the result as a pandas DataFrame
+            result = con.execute(query).df()
+            # Set the index to the index column
+            result = result.set_index(index)
+            return result
 
     def write(self, item, data_obj, metadata=None, sort_on=None, overwrite=False,
               include_index=False, schema=None, **kwargs):
         """
         writes item data to a subject within library
-        :param item:
-        :param data_obj:
-        :param metadata:
+        :param item: str
+        :param data_obj: pandas or polars dataframe
+        :param metadata: dict
         :param sort_on: list of columns to sort on
         :param overwrite: bool to overwrite existing item
         :param include_index: whether to include index when converting from pandas

@@ -100,19 +100,66 @@ def write_metadata(path, metadata={}, overwrite=False):
         json.dump(metadata, f, ensure_ascii=False)
 
 
-def schema_to_json(schema: dict):
+def schema_to_dict(schema: dict) -> dict:
     """
-    converts a polars schema to a json schema
+    Converts a Polars schema to a serializable dictionary.
+    
+    Handles all Polars data types including parameterized types like Datetime.
+    
+    Args:
+        schema: Dictionary mapping column names to Polars data types
+        
+    Returns:
+        dict: Dictionary with column names as keys and data type strings as values
     """
-    schema_as_str = {col:str(dtype) for col,dtype in schema.items()}
-    return json.dumps(schema_as_str)
+    def dtype_to_str(dtype):
+        # Handle parameterized types
+        if hasattr(dtype, 'time_unit'):
+            if hasattr(dtype, 'time_zone') and dtype.time_zone is not None:
+                return f"Datetime(time_unit='{dtype.time_unit}', time_zone='{dtype.time_zone}')"
+            return f"{dtype.__class__.__name__}(time_unit='{dtype.time_unit}')"
+        return str(dtype)
+    
+    return {col: dtype_to_str(dtype) for col, dtype in schema.items()}
 
-def json_to_schema(schema_json: str):
+def dict_to_schema(schema_dict: dict) -> dict:
     """
-    converts a json schema to a polars schema
+    Converts a dictionary back to a Polars schema.
+    
+    Args:
+        schema_dict: Dictionary mapping column names to data type strings
+        
+    Returns:
+        dict: Dictionary mapping column names to Polars data types
     """
-    schema_as_str = json.loads(schema_json)
-    return {col: getattr(pl, dtype) for col,dtype in schema_as_str.items()}
+    import re
+    
+    def str_to_dtype(type_str):
+        # Handle parameterized types like Datetime
+        match = re.match(r"(\w+)\((.+)\)", type_str)
+        if match:
+            dtype_name, params_str = match.groups()
+            params = {}
+            
+            # Parse parameters like "time_unit='ns', time_zone='UTC'"
+            for param in params_str.split(','):
+                param = param.strip()
+                if '=' in param:
+                    key, value = param.split('=', 1)
+                    key = key.strip()
+                    # Remove quotes from string values
+                    value = value.strip().strip("\'\"")
+                    params[key] = value
+            
+            # Create the appropriate Polars type
+            if dtype_name == 'Datetime':
+                return getattr(pl, dtype_name)(**params)
+            # Add other parameterized types here if needed
+            
+        # For non-parameterized types
+        return getattr(pl, type_str)
+    
+    return {col: str_to_dtype(dtype_str) for col, dtype_str in schema_dict.items()}
 
 def read_subject_schema(path):
     """
@@ -131,10 +178,9 @@ def read_subject_schema(path):
     schema_path = make_path(path, "quiver_schema.json")
     if path_exists(schema_path):
         with schema_path.open() as f:
-            schema_json = json.load(f)
-            return json_to_schema(schema_json)
-    else:
-        return {}
+            schema_dict = json.load(f)
+        return dict_to_schema(schema_dict)
+    return {}
 
 def write_subject_schema(path, schema={}):
     """
@@ -147,10 +193,10 @@ def write_subject_schema(path, schema={}):
     schema : dict
         the polars schema of the subject
     """
-    """ use this to construct paths for future storage support """
     schema_file = make_path(path, "quiver_schema.json")
+    schema_dict = schema_to_dict(schema)
     with schema_file.open("w") as f:
-        json.dump(schema, f, ensure_ascii=False)
+        json.dump(schema_dict, f, ensure_ascii=False)
 
 
 def make_path(*args):
