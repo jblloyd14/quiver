@@ -1,5 +1,5 @@
 import polars as pl
-import duckdb
+
 from pathlib import Path
 
 from . import utils
@@ -15,7 +15,7 @@ class Item:
         self.snapshot = snapshot
         self.filters = filters
         self.columns = columns
-        self.sort_on = sort_on
+
         self._subject_path = utils.make_path(self.library, self.subject)
 
         # Handle snapshot path if specified
@@ -33,6 +33,12 @@ class Item:
                 )
             self._files = [f for f in self._path.rglob("*.parquet") if f.is_file()]
             self._parquet_path = str(Path(self._path, "**/*.parquet"))
+        self.subject_metadata = utils.read_metadata(self._subject_path)
+        if sort_on is None:
+            self.sort_on = self.subject_metadata.get('sort_on', None)
+        else:
+            self.sort_on = sort_on
+        self.metadata = utils.read_metadata(self._path)
         self.schema = utils.read_subject_schema(self._subject_path)
 
         # Load the data

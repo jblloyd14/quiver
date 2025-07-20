@@ -198,6 +198,8 @@ def write_subject_schema(path, schema={}):
     with schema_file.open("w") as f:
         json.dump(schema_dict, f, ensure_ascii=False)
 
+    print("redeclare subject to use updated schema")
+
 
 def make_path(*args):
     """

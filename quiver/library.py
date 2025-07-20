@@ -64,8 +64,8 @@ class Library:
                 raise ValueError(
                     "Subject exists! To overwrite, use `overwrite=True`")
 
-        os.makedirs(subject_path)
-        os.makedirs(utils.make_path(subject_path, "_snapshots"))
+        subject_path.mkdir(parents=True, exist_ok=True)
+        utils.make_path(subject_path, "_snapshots").mkdir(parents=True, exist_ok=True)
 
         # update subjects
         self.subjects = self.list_subjects()
@@ -97,12 +97,12 @@ class Library:
         # lists subjects (subdirs)
         return utils.subdirs(self.library)
 
-    def subject(self, subject, partition_on='partition', metadata=None, overwrite=False):
+    def subject(self, subject, partition_on=None, metadata=None, overwrite=False):
         """
         Get a subject object, creating it if it does not exist.
 
         :param subject: str; name of the subject to retrieve or create
-        :param partition_on: str or list of str; partition columns for the subject, defaults to 'partition'
+        :param partition_on: str or list of str; partition columns for the subject, defaults to None
         :param metadata: dict, optional; metadata for the subject, should contain 'description' key
         :param overwrite: bool; if True, overwrite the subject if it exists
         :return: Subject object or None if creation/overwrite is aborted
@@ -112,7 +112,7 @@ class Library:
 
         # Prepare metadata with partition info
         metadata = metadata or {}
-        if 'partition_on' not in metadata:
+        if 'partition_on' not in metadata and partition_on is not None:
             metadata['partition_on'] = [partition_on] if isinstance(partition_on, str) else partition_on
 
         # Get confirmation for create/overwrite
