@@ -1,5 +1,4 @@
 import polars as pl
-import duckdb
 from pathlib import Path
 
 from . import utils
@@ -108,90 +107,18 @@ class Item:
     def head(self, n=5, as_pandas=False):
         return self.data.head(n).collect().to_pandas()
         
-    def query_data(self, sql, params=None, as_pandas=True):
+    def query_data(self, sql):
         """
-        Execute a SQL query against the item's parquet files using DuckDB.
-        
+        Execute a SQL query against the item's data obj using polars .sql().
+        the 'FROM' should be 'self'
         Args:
             sql: SQL query string. You can reference the data using a table named 'item_data'.
-                 Example: "SELECT * FROM item_data WHERE column = ?"
-            params: Optional dictionary of parameters to use with the query.
-                   Parameters can be referenced in the SQL using $param_name syntax.
-            as_pandas: If True (default), returns a pandas DataFrame. 
-                      If False, returns a polars DataFrame.
-                   
+                 Example: "SELECT * FROM self WHERE expiry_year = 2025"
         Returns:
-            pandas.DataFrame or polars.DataFrame: The query results.
-            
-        Examples:
-            # Basic query (returns pandas DataFrame by default)
-            df = item.query_duckdb("SELECT * FROM item_data WHERE price > 100")
-            
-            # Get results as polars DataFrame
-            df = item.query_duckdb(
-                "SELECT * FROM item_data WHERE price > 100",
-                as_pandas=False
-            )
-            
-            # With parameters
-            df = item.query_duckdb(
-                "SELECT * FROM item_data WHERE date >= $start_date AND date <= $end_date",
-                params={"start_date": "2023-01-01", "end_date": "2023-12-31"}
-            )
-            
-            # Aggregation
-            df = item.query_duckdb('''
-                SELECT category, AVG(price) as avg_price, COUNT(*) as count 
-                FROM item_data 
-                GROUP BY category
-            ''')
+            polars lazyframe
+
         """
-        with duckdb.connect(database=':memory:') as con:
-            # Register the parquet files as a view
-            # DuckDB will automatically handle Hive-style partitioning
-            con.execute(f"""
-                CREATE OR REPLACE VIEW item_data AS 
-                SELECT * FROM read_parquet('{self._parquet_path}', hive_partitioning=1);
-            """)
-            
-            # If params are provided, use them in the query
-            if params:
-                # Register parameters
-                for param_name, param_value in params.items():
-                    con.execute(f"SET {param_name} = ?", (param_value,))
-                
-                # Execute the query with parameters
-                result = con.execute(sql)
-            else:
-                # Execute the query without parameters
-                result = con.execute(sql)
-            
-            # Return as requested type
-            if as_pandas:
-                return result.df()
-            return result.pl()
-    
-    def explain_query(self, sql):
-        """
-        Get the query execution plan for a DuckDB query without executing it.
-        
-        Args:
-            sql: SQL query to explain
-            
-        Returns:
-            str: The query execution plan
-        """
-        con = duckdb.connect(database=':memory:')
-        try:
-            # Register the parquet files as a view
-            con.execute(f"""
-                CREATE OR REPLACE VIEW item_data AS 
-                SELECT * FROM read_parquet('{self._parquet_path}', hive_partitioning=1);
-            """)
-            
-            # Get the query plan
-            plan = con.execute(f"EXPLAIN {sql}").fetchall()
-            return "\n".join(str(row[0]) for row in plan)
-            
-        finally:
-            con.close()
+        qdf = self.data.clone()
+        result = qdf.sql(sql)
+
+        return result.pl()
