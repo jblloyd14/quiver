@@ -31,10 +31,20 @@ class Subject:
             return str(p)
         return p
 
-    def list_items(self,**kwargs):
+    def list_items(self, sort_items=False, **kwargs):
+        """
+        gets all the items in the subject and returns a set
+        if kwargs are specified, it will filter the items based on the metadata
+        if sort_items is True, it will sort the items and return a list in place of a set
+        :param sort_items: bool
+        :param kwargs: filter items based on metadata
+        :return: set of items or list of items if sort_items is True
+        """
         dirs = utils.subdirs(utils.make_path(self.library, self.subject))
         if not kwargs:
-            return sorted(set(dirs))
+            if sort_items:
+                return sorted(set(dirs))
+            return set(dirs)
 
         matched = []
         for d in dirs:
@@ -51,7 +61,9 @@ class Subject:
             if m == len(kwargs):
                 matched.append(d)
 
-        return sorted(set(matched))
+        if sort_items:
+            return sorted(set(matched))
+        return set(matched)
 
     def save_subject_metadata(self,metadata, overwrite=False):
         """
@@ -83,8 +95,9 @@ class Subject:
             inventory.append(metadata)
         return pd.DataFrame.from_records(inventory)
 
-    def item(self, item, snapshot=None, filters=None, columns=None, sort_on=None):
-        return Item(item, self.library, self.subject, snapshot=snapshot, filters=filters, columns=columns, sort_on=sort_on)
+    def item(self, item, snapshot=None, filters=None, pre_sort=False, columns=None, sort_on=None):
+        return Item(item, self.library, self.subject, snapshot=snapshot, filters=filters,
+                    pre_sort=pre_sort, columns=columns, sort_on=sort_on)
 
     def index(self, item, index_col='tstamp', last=False):
         i_path = self._item_path(item)
@@ -120,6 +133,7 @@ class Subject:
     def set_schema(self, item, save=False):
         """
         sets the schema for the subject based on the schema of a single item
+        beware of using this!
         :param item:
         :return:
         """
@@ -148,7 +162,7 @@ class Subject:
         # Get the path pattern for all Parquet files in the subject
         parquet_pattern = str(utils.make_path(self.library, self.subject, "**", "*.parquet"))
 
-        with duckdb.connect() as con:
+        with duckdb.connect(database=':memory:') as con:
             # Register the parquet files as a virtual table
             con.execute(f"""
                     CREATE OR REPLACE VIEW subject_data AS 

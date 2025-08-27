@@ -1,5 +1,6 @@
 from datetime import datetime
 import json
+import os
 import shutil
 import pandas as pd
 import numpy as np
@@ -45,10 +46,20 @@ def datetime_to_int64(df, datetime_col):
         raise ValueError("Input must be either a Polars or Pandas DataFrame")
 
 
-def subdirs(d):
-    """Lists subdirectories in a directory, excluding '_snapshots'."""
-    return [o.parts[-1] for o in Path(d).iterdir()
-            if o.is_dir() and o.parts[-1] != "_snapshots"]
+def subdirs(d: str | Path) -> list[str]:
+    """List subdirectories in a directory, excluding '_snapshots'.
+    
+    Uses os.scandir() for better performance, especially with large directories.
+    
+    Args:
+        d: Directory path as string or Path object
+        
+    Returns:
+        List of subdirectory names (strings)
+    """
+    path = str(d) if isinstance(d, Path) else d
+    with os.scandir(path) as it:
+        return [entry.name for entry in it if entry.is_dir() and entry.name != '_snapshots']
 
 def get_lib_size(library, pattern="*"):
     """gets the size of a given quiver library"""
