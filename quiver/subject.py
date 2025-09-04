@@ -65,6 +65,9 @@ class Subject:
             return sorted(set(matched))
         return set(matched)
 
+    def has_item(self, item):
+        return item in self.items
+
     def save_subject_metadata(self,metadata, overwrite=False):
         """
         Save metadata to the library, should have
