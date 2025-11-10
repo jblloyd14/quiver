@@ -3,7 +3,7 @@ import setuptools
 
 setuptools.setup(
     name="quiver",
-    version="0.1.04",
+    version="0.1.05",
     author="some guy",
     author_email="@finblocks.com",
     description="a library for managing and querying time series data",
