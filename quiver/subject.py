@@ -16,7 +16,8 @@ class Subject:
     def __init__(self, subject, library):
         self.subject = subject
         self.library = library
-        self.items = self.list_items()
+        self._items = self.list_items(sort_items=True)
+
         self.snapshots = self.list_snapshots()
         self.inventory = self._create_inventory()
         self.subject_path = utils.make_path(self.library, self.subject)
@@ -31,19 +32,23 @@ class Subject:
             return str(p)
         return p
 
+    @property
+    def items(self):
+        return self._items
+
     def list_items(self, sort_items=False, **kwargs):
         """
         gets all the items in the subject and returns a set
         if kwargs are specified, it will filter the items based on the metadata
-        if sort_items is True, it will sort the items and return a list in place of a set
+        if sort_items is True, it will sort the items(this might be unstable)
         :param sort_items: bool
         :param kwargs: filter items based on metadata
-        :return: set of items or list of items if sort_items is True
+        :return: set of items
         """
         dirs = utils.subdirs(utils.make_path(self.library, self.subject))
         if not kwargs:
             if sort_items:
-                return sorted(set(dirs))
+                return set(sorted(dirs))
             return set(dirs)
 
         matched = []
@@ -62,11 +67,11 @@ class Subject:
                 matched.append(d)
 
         if sort_items:
-            return sorted(set(matched))
+            return set(sorted(matched))
         return set(matched)
 
     def has_item(self, item):
-        return item in self.items
+        return item in self._items
 
     def save_subject_metadata(self,metadata, overwrite=False):
         """
@@ -90,7 +95,7 @@ class Subject:
         :return:
         """
         inventory = []
-        for item in self.items:
+        for item in self._items:
             metadata = utils.read_metadata(self._item_path(item))
 
             if item not in metadata.values():
@@ -118,7 +123,7 @@ class Subject:
                 return False
         i_path = self._item_path(item)
         shutil.rmtree(i_path)
-        self.items = self.list_items()
+        self._items = self.list_items()
         return True
 
     def full_subject(self):
@@ -268,11 +273,7 @@ class Subject:
 
         utils.write_metadata(i_path, metadata)
 
-        if isinstance(self.items, list):
-            self.items.append(item)
-            self.items = sorted(set(self.items))
-        elif isinstance(self.items, set):
-            self.items.add(item)
+        self._items.add(item)
 
     def append(self, item, data_obj, sort_on=None, include_index=False,
                **kwargs):
